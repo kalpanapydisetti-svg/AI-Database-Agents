@@ -1,12 +1,13 @@
 import os
+import streamlit as st
 from dotenv import load_dotenv
 import pandas as pd
+
 from langchain_openai import ChatOpenAI
 from langchain_experimental.agents.agent_toolkits import (
     create_pandas_dataframe_agent,
 )
 
-print("CSV AGENT STARTED")
 
 # ============================================================
 # 1. LOAD ENVIRONMENT VARIABLES
@@ -22,8 +23,6 @@ if not openrouter_key:
         "Check your .env file."
     )
 
-print("OpenRouter API key found")
-
 
 # ============================================================
 # 2. OPENROUTER MODEL
@@ -37,9 +36,12 @@ model = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     temperature=0,
 )
+test_response = model.invoke(
+    "Reply with exactly: DeepSeek connection successful"
+)
 
-print(f"Model selected: {llm_name}")
-
+print("MODEL TEST:")
+print(test_response.content)
 
 # ============================================================
 # 3. LOAD CSV
@@ -49,15 +51,13 @@ csv_file = "./data/salaries_2023.csv"
 
 df = pd.read_csv(csv_file).fillna(0)
 
-print("CSV loaded successfully")
-print(f"Rows: {len(df)}")
-print(f"Columns: {len(df.columns)}")
-print("Column names:")
-print(list(df.columns))
+# Store original dataset information
+original_column_count = len(df.columns)
+original_columns = df.columns.tolist()
 
 
 # ============================================================
-# 4. CREATE PANDAS AGENT
+# 4. CREATE PANDAS DATAFRAME AGENT
 # ============================================================
 
 agent = create_pandas_dataframe_agent(
@@ -70,11 +70,9 @@ agent = create_pandas_dataframe_agent(
     },
 )
 
-print("Pandas agent created successfully")
-
 
 # ============================================================
-# 5. QUESTION
+# 5. DEFAULT QUESTION
 # ============================================================
 
 QUESTION = """
@@ -83,11 +81,113 @@ and compare the average total pay between female and male employees,
 where total pay = Base_Salary + Overtime_Pay + Longevity_Pay?
 """
 
-PROMPT = f"""
+
+# ============================================================
+# 6. STREAMLIT PAGE CONFIGURATION
+# ============================================================
+
+st.set_page_config(
+    page_title="Database AI Agent",
+    page_icon="📊",
+    layout="wide",
+)
+
+
+# ============================================================
+# 7. TITLE
+# ============================================================
+
+st.title("📊 Database AI Agent with LangChain")
+
+st.write(
+    "Ask questions about the salaries_2023.csv dataset "
+    "using natural language."
+)
+
+
+# ============================================================
+# 8. DATASET INFORMATION
+# ============================================================
+
+st.write("### Dataset Information")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(
+        "Rows",
+        f"{len(df):,}"
+    )
+
+with col2:
+    st.metric(
+        "Columns",
+        original_column_count
+    )
+
+with col3:
+    st.metric(
+        "Model",
+        "DeepSeek"
+    )
+
+
+# ============================================================
+# 9. DATASET PREVIEW
+# ============================================================
+
+st.write("### Dataset Preview")
+
+st.dataframe(
+    df.head(),
+    use_container_width=True
+)
+
+
+# ============================================================
+# 10. COLUMN NAMES
+# ============================================================
+
+with st.expander("View Column Names"):
+
+    for column in original_columns:
+        st.write(f"• `{column}`")
+
+
+# ============================================================
+# 11. USER QUESTION
+# ============================================================
+
+st.write("### Ask a Question")
+
+question = st.text_input(
+    "Enter your question about the dataset:",
+    QUESTION,
+)
+
+
+# ============================================================
+# 12. RUN QUERY
+# ============================================================
+
+if st.button(
+    "🚀 Run Query",
+    type="primary"
+):
+
+    if not question.strip():
+
+        st.warning(
+            "Please enter a question."
+        )
+
+    else:
+
+        prompt = f"""
 You are a Pandas data analyst.
 
 Question:
-{QUESTION}
+{question}
 
 Use the DataFrame to calculate the answer.
 
@@ -104,28 +204,53 @@ IMPORTANT RULES:
 10. Do not guess any values.
 """
 
+        with st.spinner(
+            "Analyzing the dataset..."
+        ):
+
+            try:
+
+                res = agent.invoke(prompt)
+
+                st.write("### Final Answer")
+
+                st.markdown(
+                    res["output"]
+                )
+
+            except Exception as e:
+
+                st.error(
+                    f"Agent error: {type(e).__name__}: {e}"
+                )
+
 
 # ============================================================
-# 6. RUN AGENT
+# 13. SIDEBAR
 # ============================================================
 
-print("\nRunning AI agent...\n")
+with st.sidebar:
 
-try:
+    st.header("📁 Dataset")
 
-    result = agent.invoke(PROMPT)
+    st.write(
+        "**File:** `salaries_2023.csv`"
+    )
 
-    print("\n" + "=" * 70)
-    print("FINAL RESULT")
-    print("=" * 70)
+    st.write(
+        f"**Rows:** {len(df):,}"
+    )
 
-    print(result["output"])
+    st.write(
+        f"**Columns:** {original_column_count}"
+    )
 
-except Exception as e:
+    st.divider()
 
-    print("\n" + "=" * 70)
-    print("ERROR")
-    print("=" * 70)
+    st.write("### Available Fields")
 
-    print("Error type:", type(e).__name__)
-    print("Error:", e)
+    for column in original_columns:
+
+        st.write(
+            f"• `{column}`"
+        )
